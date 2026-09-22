@@ -1,0 +1,6 @@
+source,target,anchor_text
+https://example.com/running-guide,https://example.com/running-shoes,running shoes
+https://example.com/running-guide,https://example.com/marathon-training,marathon training
+https://example.com/running-shoes,https://example.com/running-guide,running guide
+https://example.com/marathon-training,https://example.com/running-guide,running guide
+https://example.com/protein,https://example.com/running-guide,running guide
