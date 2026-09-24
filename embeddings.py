@@ -1,31 +1,61 @@
-import pandas as pd
 from sentence_transformers import SentenceTransformer
 
-df= pd.read_csv("Data/pages.csv")
-
-# This is a pretrained embedding model 
-model= SentenceTransformer("all-MiniLM-L6-v2")
-
-texts=(
-    df["title"].fillna("")
-    + "\n"
-    + df["content"].fillna("")
+model = SentenceTransformer(
+    "all-MiniLM-L6-v2"
 )
 
-# Generate embeddings
-embeddings= model.encode(
-    texts.tolist(),
-    show_progress_bar=True
-)
+def generate_embeddings(pages):
 
-print("Number of pages:", len(df))
-print("Embedding shape:",embeddings.shape)
+    texts = []
 
-import numpy as np
+    for page in pages:
 
-np.save(
-    "Data/processed/embeddings.npy",
-    embeddings
-)
+        text = (
+            page["title"]
+            + "\n"
+            + page["content"]
+        )
 
-print("Saved embeddings to embeddings.npy")
+        texts.append(text)
+
+
+    # Diagnostic information
+    print("\n===== EMBEDDING INPUT CHECK =====")
+
+    for i, page in enumerate(pages[:5]):
+
+        print(
+            f"\nPage {i + 1}:"
+        )
+
+        print(
+            "URL:",
+            page["url"]
+        )
+
+        print(
+            "Title:",
+            page["title"]
+        )
+
+        print(
+            "Content length:",
+            len(page["content"])
+        )
+
+        print(
+            "Content preview:"
+        )
+
+        print(
+            page["content"][:300]
+        )
+
+
+    embeddings = model.encode(
+        texts,
+        show_progress_bar=True
+    )
+
+
+    return embeddings
