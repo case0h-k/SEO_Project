@@ -1,36 +1,33 @@
-import pandas as pd
 import networkx as nx
 
-links= pd.read_csv("Data/links.csv")
+def build_link_graph(pages):
 
-# Creating a directed graph
-graph= nx.DiGraph()
+    graph = nx.DiGraph()
 
-for _, row in links.iterrows():
+    # URLs that were actually crawled
+    crawled_urls = {
+        page["url"]
+        for page in pages
+    }
 
-    graph.add_edge(
-        row["source"],
-        row["target"],
-        anchor_text=row["anchor_text"]
-    )
+    # Add only crawled pages as nodes
+    for page in pages:
 
-print("Number of pages:", graph.number_of_nodes())
-print("Number of internal links:",graph.number_of_edges())
+        source = page["url"]
 
-print("\n Pages and their outgoing links:")
+        graph.add_node(source)
 
-for page in graph.nodes:
-    targets=list(
-        graph.successors(page)
-    )
-    print(page,"->",targets)
+        for link in page["links"]:
 
-# To find Orphan like pages
+            target = link["url"]
 
-print("\n Potential orphan-like pages:")
+            # Only create an edge if target
+            # was also crawled
+            if target in crawled_urls:
 
-for page in graph.nodes:
+                graph.add_edge(
+                    source,
+                    target
+                )
 
-    incoming_links=graph.in_degree(page)
-    if incoming_links ==0:
-        print(page)
+    return graph

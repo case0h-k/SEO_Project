@@ -2,26 +2,63 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 import trafilatura
-import pandas as pd
-from collections import deque
+from urllib.parse import (
+    urljoin,
+    urlparse,
+    urlunparse
+)
 
+def normalize_url(url):
 
-# ==========================================
-# SETTINGS
-# ==========================================
+    parsed = urlparse(url)
 
-START_URL = "https://web-scraping.dev/"
+    # Remove query parameters and fragments
+    path = parsed.path.rstrip("/")
 
-MAX_PAGES = 20
+    # Root URL should remain /
+    if path == "":
+        path = "/"
 
-HEADERS = {
-    "User-Agent": "SemanticSiteArchitectureCrawler/1.0"
-}
+    normalized = parsed._replace(
+        path=path,
+        query="",
+        fragment=""
+    )
 
+    return urlunparse(normalized)
 
-# ==========================================
-# CRAWL ONE PAGE
-# ==========================================
+def is_crawlable_url(url):
+
+    parsed = urlparse(url)
+
+    # Only crawl HTTP/HTTPS URLs
+    if parsed.scheme not in ["http", "https"]:
+        return False
+
+    # Ignore common non-page resources
+    excluded_extensions = (
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".gif",
+        ".svg",
+        ".pdf",
+        ".zip",
+        ".mp4",
+        ".mp3",
+        ".css",
+        ".js",
+        ".xml",
+        ".json"
+    )
+
+    if parsed.path.lower().endswith(
+        excluded_extensions
+    ):
+        return False
+
+    return True
+
 
 def crawl_page(url):
 
@@ -30,15 +67,33 @@ def crawl_page(url):
         response = requests.get(
             url,
             timeout=10,
-            headers=HEADERS
+            headers={
+                "User-Agent": "SemanticSiteCrawler/1.0"
+            }
         )
 
         response.raise_for_status()
 
     except requests.RequestException as e:
 
-        print(f"Failed: {url}")
-        print(e)
+        print(
+            f"Skipping {url}: {e}"
+        )
+
+        return None
+
+
+    # Make sure this is actually an HTML page
+    content_type = response.headers.get(
+        "Content-Type",
+        ""
+    )
+
+    if "text/html" not in content_type:
+
+        print(
+            f"Skipping non-HTML URL: {url}"
+        )
 
         return None
 
@@ -51,9 +106,9 @@ def crawl_page(url):
     )
 
 
-    # ------------------------------
-    # Title
-    # ------------------------------
+    # --------------------------------
+    # Extract title
+    # --------------------------------
 
     title = ""
 
@@ -64,9 +119,9 @@ def crawl_page(url):
         )
 
 
-    # ------------------------------
-    # Main text
-    # ------------------------------
+    # --------------------------------
+    # Extract main textual content
+    # --------------------------------
 
     content = trafilatura.extract(
         html
@@ -77,217 +132,110 @@ def crawl_page(url):
         content = ""
 
 
-    # ------------------------------
-    # Internal links
-    # ------------------------------
+    # --------------------------------
+    # Extract internal links
+    # --------------------------------
 
-    internal_links = []
+    links = []
 
-    domain = urlparse(
-        url
-    ).netloc
+    domain = urlparse(url).netloc
 
 
-    for link in soup.find_all(
+    for a in soup.find_all(
         "a",
         href=True
     ):
 
         target = urljoin(
             url,
-            link["href"]
+            a["href"]
         )
 
-        parsed_target = urlparse(
-            target
-        )
+        # Only keep links belonging to
+        # the same website
+        if (
+            urlparse(target).netloc == domain
+            and is_crawlable_url(target)
+        ):
+
+            links.append({
+                "url": target,
+                "anchor_text": a.get_text(
+                    strip=True
+                )
+            })
 
 
-        # Only HTTP/HTTPS
-        if parsed_target.scheme not in [
-            "http",
-            "https"
-        ]:
-
-            continue
-
-
-        # Only same-domain links
-        if parsed_target.netloc != domain:
-
-            continue
-
-
-        # Remove fragments
-        target = target.split("#")[0]
-
-
-        anchor_text = link.get_text(
-            " ",
-            strip=True
-        )
-
-
-        internal_links.append({
-            "url": target,
-            "anchor_text": anchor_text
-        })
-
+    # --------------------------------
+    # Return page data
+    # --------------------------------
 
     return {
         "url": url,
         "title": title,
         "content": content,
-        "links": internal_links
+        "links": links
     }
 
 
-# ==========================================
-# WEBSITE CRAWLER
-# ==========================================
-
-def crawl_website(start_url, max_pages=20):
-
-    domain = urlparse(
+def crawl_website(
+    start_url,
+    max_pages=50
+):
+    start_url = normalize_url(
         start_url
-    ).netloc
+    )
+    pages = []
 
-
-    queue = deque([
-        start_url
-    ])
+    queue = [start_url]
 
     visited = set()
 
-    pages = []
 
-    links = []
+    while (
+        queue
+        and len(pages) < max_pages
+    ):
+
+        url = queue.pop(0)
+        
+        url = normalize_url(url)
 
 
-    while queue and len(visited) < max_pages:
-
-        url = queue.popleft()
-
-
+        # Don't crawl the same URL twice
         if url in visited:
-
             continue
+
+
+        visited.add(url)
 
 
         print(
-            f"Crawling ({len(visited) + 1}/{max_pages}): {url}"
+            f"Crawling: {url}"
         )
 
 
-        page = crawl_page(
-            url
-        )
+        page = crawl_page(url)
 
 
-        visited.add(
-            url
-        )
-
-
+        # If the request failed,
+        # don't add it to pages
         if page is None:
-
             continue
 
 
-        # ------------------------------
-        # Save page
-        # ------------------------------
-
-        pages.append({
-            "url": page["url"],
-            "title": page["title"],
-            "content": page["content"]
-        })
+        pages.append(page)
 
 
-        # ------------------------------
-        # Save links
-        # ------------------------------
-
+        # Add discovered links
+        # to the crawl queue
         for link in page["links"]:
 
-            links.append({
-                "source": url,
-                "target": link["url"],
-                "anchor_text": link["anchor_text"]
-            })
+            target = normalize_url(link["url"])
+
+            if target not in visited:
+
+                queue.append(target)
 
 
-            # Add new pages to queue
-            if (
-                link["url"] not in visited
-                and link["url"] not in queue
-                and urlparse(link["url"]).netloc == domain
-            ):
-
-                queue.append(
-                    link["url"]
-                )
-
-
-    return pages, links
-
-
-# ==========================================
-# RUN CRAWLER
-# ==========================================
-
-pages, links = crawl_website(
-    START_URL,
-    MAX_PAGES
-)
-
-
-# ==========================================
-# SAVE RESULTS
-# ==========================================
-
-pages_df = pd.DataFrame(
-    pages
-)
-
-links_df = pd.DataFrame(
-    links
-)
-
-
-pages_df.to_csv(
-    "data/pages.csv",
-    index=False
-)
-
-
-links_df.to_csv(
-    "data/links.csv",
-    index=False
-)
-
-
-print("\n================================")
-print("CRAWLING COMPLETE")
-print("================================")
-
-print(
-    f"Pages crawled: {len(pages_df)}"
-)
-
-print(
-    f"Internal links found: {len(links_df)}"
-)
-
-print(
-    "\nSaved:"
-)
-
-print(
-    "data/pages.csv"
-)
-
-print(
-    "data/links.csv"
-)
+    return pages
